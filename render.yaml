@@ -1,0 +1,36 @@
+services:
+  # Background Worker for job collection
+  - type: worker
+    name: telegram-jobs-worker
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.7
+      - key: DATABASE_URL
+        fromDatabase:
+          name: telegram-jobs-db
+          property: connectionString
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: SESSION_STRING
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: TARGET_USERNAME
+        value: mediaya
+      - key: SCHEDULE_TIME
+        value: "21:00"
+      - key: TIMEZONE
+        value: Europe/Moscow
+      - key: LOG_LEVEL
+        value: INFO
+
+databases:
+  - name: telegram-jobs-db
+    databaseName: telegram_jobs
+    plan: free
