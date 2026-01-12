@@ -1,5 +1,4 @@
-pyrogram==2.0.106
-TgCrypto==1.2.5
+telethon==1.37.0
 python-telegram-bot==20.7
 APScheduler==3.10.4
 SQLAlchemy==2.0.25

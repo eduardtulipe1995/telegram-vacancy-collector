@@ -1,7 +1,8 @@
 import asyncio
-from datetime import datetime, timedelta
-from pyrogram import Client
-from pyrogram.errors import FloodWait, UsernameInvalid, ChannelPrivate, PeerIdInvalid
+from datetime import datetime, timedelta, timezone
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+from telethon.errors import FloodWaitError, UsernameInvalidError, ChannelPrivateError, PeerIdInvalidError
 from collectors.rate_limiter import rate_limiter
 from config.settings import settings
 from config.logging_config import get_logger
@@ -11,7 +12,7 @@ logger = get_logger(__name__)
 
 class ChannelReader:
     """
-    Читает сообщения из Telegram каналов используя Pyrogram User Bot
+    Читает сообщения из Telegram каналов используя Telethon User Bot
     """
 
     def __init__(self):
@@ -19,29 +20,29 @@ class ChannelReader:
         logger.info("ChannelReader initialized")
 
     async def initialize(self):
-        """Инициализация Pyrogram client"""
+        """Инициализация Telethon client"""
         if self.client:
             logger.warning("Client already initialized")
             return
 
-        logger.info("Initializing Pyrogram client...")
+        logger.info("Initializing Telethon client...")
 
-        self.client = Client(
-            "vacancy_collector",
-            api_id=int(settings.API_ID),
-            api_hash=settings.API_HASH,
-            session_string=settings.SESSION_STRING,
-            in_memory=True  # Не создавать session файл
+        # Создаем клиент с StringSession
+        session = StringSession(settings.SESSION_STRING)
+        self.client = TelegramClient(
+            session,
+            int(settings.API_ID),
+            settings.API_HASH
         )
 
         await self.client.start()
-        logger.info("Pyrogram client started successfully")
+        logger.info("Telethon client started successfully")
 
     async def close(self):
         """Закрытие клиента"""
         if self.client:
-            await self.client.stop()
-            logger.info("Pyrogram client stopped")
+            await self.client.disconnect()
+            logger.info("Telethon client disconnected")
 
     async def read_channel_messages(self, channel_username, hours=24, limit=100):
         """
@@ -59,7 +60,8 @@ class ChannelReader:
             await self.initialize()
 
         messages = []
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        # Используем UTC timezone для совместимости с Telethon
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         try:
             # Rate limiting
@@ -67,8 +69,8 @@ class ChannelReader:
 
             logger.info(f"Reading messages from channel: {channel_username}")
 
-            # Получаем сообщения из канала
-            async for message in self.client.get_chat_history(channel_username, limit=limit):
+            # Получаем сообщения из канала через iter_messages
+            async for message in self.client.iter_messages(channel_username, limit=limit):
                 # Проверяем временную метку
                 if message.date < cutoff_time:
                     break
@@ -77,19 +79,19 @@ class ChannelReader:
 
             logger.info(f"Read {len(messages)} messages from {channel_username}")
 
-        except FloodWait as e:
-            logger.warning(f"FloodWait for {e.value} seconds on channel {channel_username}")
-            await asyncio.sleep(e.value)
+        except FloodWaitError as e:
+            logger.warning(f"FloodWait for {e.seconds} seconds on channel {channel_username}")
+            await asyncio.sleep(e.seconds)
             # Retry после ожидания
             return await self.read_channel_messages(channel_username, hours, limit)
 
-        except UsernameInvalid:
+        except UsernameInvalidError:
             logger.error(f"Invalid username: {channel_username}")
 
-        except ChannelPrivate:
+        except ChannelPrivateError:
             logger.error(f"Channel is private or not accessible: {channel_username}")
 
-        except PeerIdInvalid:
+        except PeerIdInvalidError:
             logger.error(f"Peer ID invalid for channel: {channel_username}")
 
         except Exception as e:
