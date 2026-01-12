@@ -16,8 +16,16 @@ class Settings:
     # Telegram Bot
     BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-    # Получатель вакансий
+    # Получатели вакансий (можно указать несколько через запятую)
     TARGET_USERNAME = os.getenv('TARGET_USERNAME', 'mediaya')
+
+    @staticmethod
+    def get_target_usernames():
+        """Список получателей вакансий (поддержка нескольких через запятую)"""
+        target_username = os.getenv('TARGET_USERNAME', 'mediaya')
+        if ',' in target_username:
+            return [u.strip() for u in target_username.split(',')]
+        return [target_username.strip()]
 
     # Database
     DATABASE_URL = os.getenv('DATABASE_URL')

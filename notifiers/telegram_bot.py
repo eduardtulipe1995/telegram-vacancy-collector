@@ -14,8 +14,8 @@ class TelegramNotifier:
 
     def __init__(self):
         self.bot = None
-        self.target_username = settings.TARGET_USERNAME
-        logger.info(f"TelegramNotifier initialized (target: @{self.target_username})")
+        self.target_usernames = settings.get_target_usernames()
+        logger.info(f"TelegramNotifier initialized (targets: {', '.join('@' + u for u in self.target_usernames)})")
 
     async def initialize(self):
         """Инициализация Telegram Bot"""
@@ -34,9 +34,12 @@ class TelegramNotifier:
             logger.error(f"Failed to initialize bot: {e}")
             raise
 
-    async def get_chat_id(self):
+    async def get_chat_id(self, username):
         """
         Получить chat_id пользователя из БД
+
+        Args:
+            username: Username пользователя
 
         Returns:
             int or None: chat_id пользователя
@@ -44,14 +47,14 @@ class TelegramNotifier:
         session = get_session()
         try:
             user_chat = session.query(UserChatID).filter_by(
-                username=self.target_username
+                username=username
             ).first()
 
             if user_chat:
                 return user_chat.chat_id
 
             logger.warning(
-                f"Chat ID not found for @{self.target_username}. "
+                f"Chat ID not found for @{username}. "
                 f"User needs to send /start to the bot first."
             )
             return None
@@ -119,56 +122,66 @@ class TelegramNotifier:
 
     async def send_vacancies(self, vacancies):
         """
-        Отправляет список вакансий пользователю
+        Отправляет список вакансий всем пользователям
 
         Args:
             vacancies: List[dict] - список вакансий
 
         Returns:
-            bool: True если отправка успешна
+            bool: True если отправка хотя бы одному пользователю успешна
         """
         if not self.bot:
             await self.initialize()
 
-        chat_id = await self.get_chat_id()
-        if not chat_id:
-            logger.error(
-                f"Cannot send message: chat_id not found for @{self.target_username}. "
-                f"User must send /start to the bot first."
-            )
-            return False
-
         message = self.format_vacancies_message(vacancies)
+        success_count = 0
 
-        try:
-            # Telegram имеет лимит на длину сообщения (4096 символов)
-            if len(message) > 4096:
-                # Разбиваем на части
-                await self._send_long_message(chat_id, message)
-            else:
-                await self.bot.send_message(chat_id=chat_id, text=message)
+        # Отправляем каждому пользователю
+        for username in self.target_usernames:
+            try:
+                chat_id = await self.get_chat_id(username)
+                if not chat_id:
+                    logger.error(
+                        f"Cannot send message: chat_id not found for @{username}. "
+                        f"User must send /start to the bot first."
+                    )
+                    continue
 
-            logger.info(f"Vacancies sent to @{self.target_username} (chat_id: {chat_id})")
+                # Telegram имеет лимит на длину сообщения (4096 символов)
+                if len(message) > 4096:
+                    # Разбиваем на части
+                    await self._send_long_message(chat_id, message)
+                else:
+                    await self.bot.send_message(chat_id=chat_id, text=message)
 
-            # Сохраняем информацию об отправке
-            await self._save_sent_vacancies(vacancies)
+                logger.info(f"Vacancies sent to @{username} (chat_id: {chat_id})")
 
+                # Сохраняем информацию об отправке
+                await self._save_sent_vacancies(vacancies, username)
+
+                success_count += 1
+
+            except Forbidden:
+                logger.error(f"Bot is blocked by user @{username}")
+                continue
+
+            except BadRequest as e:
+                logger.error(f"Bad request sending message to @{username}: {e}")
+                continue
+
+            except TelegramError as e:
+                logger.error(f"Telegram error sending to @{username}: {e}")
+                continue
+
+            except Exception as e:
+                logger.error(f"Unexpected error sending message to @{username}: {e}")
+                continue
+
+        if success_count > 0:
+            logger.info(f"Vacancies sent to {success_count}/{len(self.target_usernames)} users")
             return True
-
-        except Forbidden:
-            logger.error(f"Bot is blocked by user @{self.target_username}")
-            return False
-
-        except BadRequest as e:
-            logger.error(f"Bad request sending message: {e}")
-            return False
-
-        except TelegramError as e:
-            logger.error(f"Telegram error: {e}")
-            return False
-
-        except Exception as e:
-            logger.error(f"Unexpected error sending message: {e}")
+        else:
+            logger.error("Failed to send vacancies to any user")
             return False
 
     async def _send_long_message(self, chat_id, message):
@@ -194,7 +207,7 @@ class TelegramNotifier:
             if i < len(parts) - 1:
                 await asyncio.sleep(0.5)  # Небольшая задержка между частями
 
-    async def _save_sent_vacancies(self, vacancies):
+    async def _save_sent_vacancies(self, vacancies, username):
         """Сохранить информацию об отправленных вакансиях"""
         session = get_session()
         try:
@@ -211,16 +224,16 @@ class TelegramNotifier:
                 # Создаем запись об отправке
                 sent = SentVacancy(
                     vacancy_id=vacancy.id,
-                    sent_to=self.target_username
+                    sent_to=username
                 )
                 session.add(sent)
 
             session.commit()
-            logger.info(f"Saved {len(vacancies)} sent vacancy records")
+            logger.info(f"Saved {len(vacancies)} sent vacancy records for @{username}")
 
         except Exception as e:
             session.rollback()
-            logger.error(f"Error saving sent vacancies: {e}")
+            logger.error(f"Error saving sent vacancies for @{username}: {e}")
         finally:
             close_session(session)
 
