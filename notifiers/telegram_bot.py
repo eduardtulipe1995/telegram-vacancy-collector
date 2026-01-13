@@ -94,6 +94,7 @@ class TelegramNotifier:
     def format_vacancies_message(self, vacancies):
         """
         Форматирует список вакансий в текстовое сообщение
+        Группировка по типу позиции, минималистичный формат
 
         Args:
             vacancies: List[dict] - список вакансий
@@ -109,39 +110,60 @@ class TelegramNotifier:
             )
 
         # Группируем вакансии по типу позиции
-        position_emojis = {
-            'сценарист': '✍️',
-            'редактор': '🎬',
-            'шеф-редактор': '👔'
+        groups = {
+            'сценарист': [],
+            'редактор': [],
+            'шеф-редактор': []
         }
 
-        message = "🎬 Новые вакансии за последние 24 часа:\n"
-        message += "═" * 35 + "\n\n"
+        for vacancy in vacancies:
+            position_type = vacancy.get('position_type', 'редактор')
+            if position_type in groups:
+                groups[position_type].append(vacancy)
 
-        for i, vacancy in enumerate(vacancies, 1):
-            title = vacancy.get('title', 'Без названия')
-            # Обрезаем слишком длинные заголовки
-            if len(title) > 80:
-                title = title[:77] + '...'
+        # Формируем сообщение
+        message = ""
 
-            company = vacancy.get('company')
-            url = vacancy.get('url', '')
-            position_type = vacancy.get('position_type', '')
-
-            # Emoji для типа позиции
-            emoji = position_emojis.get(position_type, '📋')
-
-            message += f"{emoji} {i}. {title}\n"
-            if company:
-                message += f"   🏢 {company}\n"
-            if url:
-                message += f"   🔗 {url}\n"
+        # Сценаристы
+        if groups['сценарист']:
+            message += "📝 СЦЕНАРИСТЫ:\n\n"
+            for vacancy in groups['сценарист']:
+                message += self._format_single_vacancy(vacancy)
             message += "\n"
 
-        message += "═" * 35 + "\n"
-        message += f"📊 Всего найдено: {len(vacancies)} вакансий"
+        # Редакторы
+        if groups['редактор']:
+            message += "🎬 РЕДАКТОРЫ:\n\n"
+            for vacancy in groups['редактор']:
+                message += self._format_single_vacancy(vacancy)
+            message += "\n"
 
-        return message
+        # Шеф-редакторы
+        if groups['шеф-редактор']:
+            message += "👔 ШЕФ-РЕДАКТОРЫ:\n\n"
+            for vacancy in groups['шеф-редактор']:
+                message += self._format_single_vacancy(vacancy)
+
+        return message.strip()
+
+    def _format_single_vacancy(self, vacancy):
+        """Форматирует одну вакансию"""
+        title = vacancy.get('title', 'Без названия')
+        company = vacancy.get('company')
+        url = vacancy.get('url', '')
+
+        # Формат: Название — Компания
+        if company:
+            line = f"{title} — {company}\n"
+        else:
+            line = f"{title}\n"
+
+        # Ссылка на отдельной строке
+        if url:
+            line += f"{url}\n"
+
+        line += "\n"
+        return line
 
     async def send_vacancies(self, vacancies):
         """
@@ -175,7 +197,11 @@ class TelegramNotifier:
                     # Разбиваем на части
                     await self._send_long_message(chat_id, message)
                 else:
-                    await self.bot.send_message(chat_id=chat_id, text=message)
+                    await self.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        disable_web_page_preview=True
+                    )
 
                 logger.info(f"Vacancies sent to @{username} (chat_id: {chat_id})")
 
@@ -226,7 +252,11 @@ class TelegramNotifier:
             message = message[split_index:].lstrip()
 
         for i, part in enumerate(parts):
-            await self.bot.send_message(chat_id=chat_id, text=part)
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text=part,
+                disable_web_page_preview=True
+            )
             if i < len(parts) - 1:
                 await asyncio.sleep(0.5)  # Небольшая задержка между частями
 

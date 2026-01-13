@@ -5,7 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 from pytz import timezone
 from collectors.channel_reader import channel_reader
 from processors.vacancy_extractor import vacancy_extractor
-from processors.vacancy_filter import vacancy_filter
+from processors.gpt_filter import gpt_filter
 from processors.deduplicator import deduplicator
 from notifiers.telegram_bot import telegram_notifier
 from database.models import JobRun, Vacancy, Channel
@@ -137,10 +137,10 @@ async def run_vacancy_collection():
         logger.info(f"Extracted {len(all_vacancies)} potential vacancies")
         job_run.vacancies_found = len(all_vacancies)
 
-        # 5. Фильтрация по позициям
-        logger.info("Step 5: Filtering vacancies by position...")
-        filtered_vacancies = vacancy_filter.filter_vacancies(all_vacancies)
-        logger.info(f"Filtered: {len(filtered_vacancies)} relevant vacancies")
+        # 5. Фильтрация через GPT
+        logger.info("Step 5: Filtering vacancies with GPT AI...")
+        filtered_vacancies = await gpt_filter.filter_vacancies(all_vacancies)
+        logger.info(f"GPT filtered: {len(filtered_vacancies)} relevant vacancies")
 
         # 6. Дедупликация
         logger.info("Step 6: Removing duplicates...")
