@@ -103,19 +103,31 @@ class Deduplicator:
         session = get_session()
         unique_vacancies = []
         duplicate_count = 0
+        error_count = 0
 
         try:
             for vacancy in vacancies:
-                if not self.is_duplicate(vacancy, session=session):
+                try:
+                    if not self.is_duplicate(vacancy, session=session):
+                        unique_vacancies.append(vacancy)
+                    else:
+                        duplicate_count += 1
+                except Exception as e:
+                    # Если ошибка при проверке одной вакансии, не прерываем весь процесс
+                    logger.warning(f"Error checking duplicate for vacancy: {e}")
+                    error_count += 1
+                    # Добавляем вакансию как уникальную, чтобы не потерять данные
                     unique_vacancies.append(vacancy)
-                else:
-                    duplicate_count += 1
 
             logger.info(
                 f"Deduplication complete: {len(unique_vacancies)} unique, "
-                f"{duplicate_count} duplicates filtered"
+                f"{duplicate_count} duplicates filtered, {error_count} errors"
             )
 
+        except Exception as e:
+            logger.error(f"Critical error during deduplication: {e}")
+            # Возвращаем все вакансии в случае критической ошибки
+            return vacancies
         finally:
             close_session(session)
 

@@ -22,13 +22,26 @@ class ContextAnalyzer:
         'монтажер', 'видеомонтаж', 'видео монтаж',
         'premiere', 'after effects', 'davinci', 'final cut',
         'видеоблог', 'видео блог', 'влог', 'vlog',
-        'медиапроизводство', 'медиа производство'
+        'медиапроизводство', 'медиа производство',
+        # Дополнительные ключевые слова
+        'видеоклип', 'клип', 'music video',
+        'анимация', 'animation', 'motion graphics', 'моушн',
+        'визуальный контент', 'visual content',
+        'трейлер', 'trailer', 'промо', 'promo',
+        'шортс', 'shorts', 'сторис', 'stories',
+        'стриминг', 'streaming', 'прямой эфир', 'live',
+        'color grading', 'цветокоррекция', 'колоргрейдинг',
+        'vfx', 'спецэффекты', 'visual effects',
+        'режиссёр', 'режиссер', 'director',
+        'кино', 'film', 'cinema', 'сериал',
+        'рекламный ролик', 'реклама видео', 'commercial',
+        'контент для соцсетей', 'социальные сети видео'
     ]
 
-    def __init__(self, min_matches=2, fuzzy_threshold=85):
+    def __init__(self, min_matches=1, fuzzy_threshold=85):
         """
         Args:
-            min_matches: Минимальное количество совпадений keywords
+            min_matches: Минимальное количество совпадений keywords (1 - достаточно одного)
             fuzzy_threshold: Порог для fuzzy matching (0-100)
         """
         self.min_matches = min_matches

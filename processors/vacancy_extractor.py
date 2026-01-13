@@ -1,4 +1,5 @@
 import re
+from telethon.tl.types import MessageEntityUrl, MessageEntityTextUrl
 from utils.text_utils import extract_first_line, extract_url_from_text, clean_text
 from config.logging_config import get_logger
 
@@ -8,13 +9,20 @@ logger = get_logger(__name__)
 class VacancyExtractor:
     """Извлекает информацию о вакансии из сообщения Telegram"""
 
-    # Patterns для извлечения компании
+    # Patterns для извлечения компании (приоритет по порядку)
     COMPANY_PATTERNS = [
-        r'компания[:\s]+([А-Яа-яA-Za-z0-9\s\-"«»]+)',
-        r'([А-Яа-яA-Za-z0-9\s\-"«»]+)\s+ищет',
-        r'в\s+([А-Яа-яA-Za-z0-9\s\-"«»]+)\s+требуется',
-        r'([А-Яа-яA-Za-z0-9\s\-"«»]+)\s+приглашает',
-        r'#([А-Яа-яA-Za-z0-9_]+)',  # Хештег с названием компании
+        # Прямое указание компании
+        r'компания[:\s]+[«"]?([А-Яа-яA-Za-z0-9\s\-\.]+)[»"]?',
+        r'(?:в\s+)?(?:компанию?|студию?|агентств[оау]?)\s+[«"]?([А-Яа-яA-Za-z0-9\s\-\.]+)[»"]?',
+        # Компания ищет/приглашает
+        r'([А-Яа-яA-Za-z0-9\s\-\.]+)\s+(?:ищет|приглашает|набирает|открыта вакансия)',
+        r'(?:в|для)\s+([А-Яа-яA-Za-z0-9\s\-\.]+)\s+(?:требуется|нужен|ищем)',
+        # Работодатель
+        r'работодатель[:\s]+[«"]?([А-Яа-яA-Za-z0-9\s\-\.]+)[»"]?',
+        # Хештег с названием компании
+        r'#([A-Za-z0-9_]+)',
+        # Название в кавычках в начале текста
+        r'^[«"]([А-Яа-яA-Za-z0-9\s\-\.]+)[»"]',
     ]
 
     def extract_vacancy_data(self, message):
@@ -79,12 +87,18 @@ class VacancyExtractor:
 
     def _extract_url(self, message):
         """Извлекает URL из сообщения"""
-        # 1. Проверяем inline buttons (reply_markup)
-        if message.reply_markup and message.reply_markup.inline_keyboard:
-            for row in message.reply_markup.inline_keyboard:
-                for button in row:
-                    if button.url:
-                        return button.url
+        # 1. Проверяем inline buttons (reply_markup) - Telethon использует rows атрибут
+        if message.reply_markup:
+            try:
+                # В Telethon reply_markup может быть ReplyInlineMarkup
+                rows = getattr(message.reply_markup, 'rows', None)
+                if rows:
+                    for row in rows:
+                        for button in row.buttons:
+                            if hasattr(button, 'url') and button.url:
+                                return button.url
+            except Exception as e:
+                logger.debug(f"Error extracting URL from reply_markup: {e}")
 
         # 2. Ищем URL в тексте
         if message.text:
@@ -92,18 +106,29 @@ class VacancyExtractor:
             if url:
                 return url
 
-        # 3. Проверяем entities (ссылки в тексте)
+        # 3. Проверяем entities (ссылки в тексте) - Telethon entities
         if message.entities:
             for entity in message.entities:
-                if entity.type == 'url':
-                    url_text = message.text[entity.offset:entity.offset + entity.length]
-                    return url_text
-                elif entity.type == 'text_link':
+                # Telethon использует типы объектов, а не строки
+                if isinstance(entity, MessageEntityUrl):
+                    # URL прямо в тексте
+                    if message.text:
+                        url_text = message.text[entity.offset:entity.offset + entity.length]
+                        return url_text
+                elif isinstance(entity, MessageEntityTextUrl):
+                    # Гиперссылка (текст со скрытым URL)
                     return entity.url
 
         # 4. Генерируем ссылку на сообщение в канале
-        if message.chat and message.chat.username:
-            return f"https://t.me/{message.chat.username}/{message.id}"
+        # В Telethon это peer_id.channel_id или chat
+        try:
+            if hasattr(message, 'peer_id') and hasattr(message.peer_id, 'channel_id'):
+                # Получаем username канала если он есть в чате
+                chat = getattr(message, 'chat', None)
+                if chat and hasattr(chat, 'username') and chat.username:
+                    return f"https://t.me/{chat.username}/{message.id}"
+        except Exception as e:
+            logger.debug(f"Error generating message URL: {e}")
 
         return None
 

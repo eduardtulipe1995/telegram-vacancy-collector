@@ -115,7 +115,7 @@ class ChannelReader:
 
         all_messages = {}
         batch_size = settings.BATCH_SIZE
-        batch_delay = settings.BATCH_DELAY
+        batch_delay = settings.BATCH_DELAY  # Используем настройку из конфига
 
         logger.info(f"Reading messages from {len(channels)} channels (batch_size={batch_size})")
 

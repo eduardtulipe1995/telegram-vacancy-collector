@@ -20,8 +20,13 @@ def extract_username_from_url(url):
     return url
 
 
-def load_channels_from_csv(csv_path='data/Телеграм_каналы_для_поиска_работы.csv'):
+def load_channels_from_csv(csv_path=None):
     """Загрузить каналы из CSV в базу данных"""
+
+    # Используем абсолютный путь относительно текущего файла
+    if csv_path is None:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        csv_path = os.path.join(base_dir, 'data', 'Телеграм_каналы_для_поиска_работы.csv')
 
     if not os.path.exists(csv_path):
         logger.error(f"CSV file not found: {csv_path}")
@@ -78,11 +83,14 @@ def load_channels_from_csv(csv_path='data/Телеграм_каналы_для_�
     return loaded_count
 
 
-def get_enabled_channels():
+def get_enabled_channels(limit=None):
     """Получить список активных каналов из БД"""
     session = get_session()
     try:
-        channels = session.query(Channel).filter_by(enabled=True).all()
+        query = session.query(Channel).filter_by(enabled=True)
+        if limit:
+            query = query.limit(limit)
+        channels = query.all()
         return channels
     finally:
         close_session(session)

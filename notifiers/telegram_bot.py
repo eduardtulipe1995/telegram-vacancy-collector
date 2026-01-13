@@ -102,21 +102,44 @@ class TelegramNotifier:
             str: Отформатированное сообщение
         """
         if not vacancies:
-            return "Вакансий не найдено"
+            return (
+                "📭 Вакансий не найдено\n\n"
+                "За последние 24 часа не было найдено новых вакансий "
+                "по вашим критериям (сценарист, редактор видео, шеф-редактор)."
+            )
 
-        message = "🎬 Новые вакансии за последние 24 часа:\n\n"
+        # Группируем вакансии по типу позиции
+        position_emojis = {
+            'сценарист': '✍️',
+            'редактор': '🎬',
+            'шеф-редактор': '👔'
+        }
+
+        message = "🎬 Новые вакансии за последние 24 часа:\n"
+        message += "═" * 35 + "\n\n"
 
         for i, vacancy in enumerate(vacancies, 1):
             title = vacancy.get('title', 'Без названия')
-            company = vacancy.get('company', 'Не указана')
+            # Обрезаем слишком длинные заголовки
+            if len(title) > 80:
+                title = title[:77] + '...'
+
+            company = vacancy.get('company')
             url = vacancy.get('url', '')
+            position_type = vacancy.get('position_type', '')
 
-            message += f"{i}. {title} - {company}"
+            # Emoji для типа позиции
+            emoji = position_emojis.get(position_type, '📋')
+
+            message += f"{emoji} {i}. {title}\n"
+            if company:
+                message += f"   🏢 {company}\n"
             if url:
-                message += f" - {url}"
-            message += "\n\n"
+                message += f"   🔗 {url}\n"
+            message += "\n"
 
-        message += f"Всего найдено: {len(vacancies)} вакансий"
+        message += "═" * 35 + "\n"
+        message += f"📊 Всего найдено: {len(vacancies)} вакансий"
 
         return message
 
@@ -210,6 +233,7 @@ class TelegramNotifier:
     async def _save_sent_vacancies(self, vacancies, username):
         """Сохранить информацию об отправленных вакансиях"""
         session = get_session()
+        saved_count = 0
         try:
             for vacancy_data in vacancies:
                 # Находим вакансию в БД
@@ -221,15 +245,26 @@ class TelegramNotifier:
                 if not vacancy:
                     continue
 
+                # Проверяем, не была ли вакансия уже отправлена этому пользователю
+                existing_sent = session.query(SentVacancy).filter_by(
+                    vacancy_id=vacancy.id,
+                    sent_to=username
+                ).first()
+
+                if existing_sent:
+                    logger.debug(f"Vacancy {vacancy.id} already sent to @{username}, skipping")
+                    continue
+
                 # Создаем запись об отправке
                 sent = SentVacancy(
                     vacancy_id=vacancy.id,
                     sent_to=username
                 )
                 session.add(sent)
+                saved_count += 1
 
             session.commit()
-            logger.info(f"Saved {len(vacancies)} sent vacancy records for @{username}")
+            logger.info(f"Saved {saved_count} sent vacancy records for @{username}")
 
         except Exception as e:
             session.rollback()

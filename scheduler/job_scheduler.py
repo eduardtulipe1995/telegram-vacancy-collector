@@ -94,7 +94,7 @@ async def run_vacancy_collection():
 
         # 2. Загрузка каналов из БД
         logger.info("Step 2: Loading channels from database...")
-        channels = get_enabled_channels()
+        channels = get_enabled_channels()  # Загружаем все активные каналы
         logger.info(f"Loaded {len(channels)} enabled channels")
 
         if not channels:
@@ -150,6 +150,7 @@ async def run_vacancy_collection():
         # 7. Сохранение в БД
         logger.info("Step 7: Saving vacancies to database...")
         saved_vacancies = []
+        skipped_duplicates = 0
 
         for vacancy_data in unique_vacancies:
             vacancy_hash = generate_vacancy_hash(
@@ -157,6 +158,13 @@ async def run_vacancy_collection():
                 company=vacancy_data.get('company', ''),
                 url=vacancy_data.get('url', '')
             )
+
+            # Проверяем, существует ли уже вакансия с таким хешем
+            existing = session.query(Vacancy).filter_by(hash=vacancy_hash).first()
+            if existing:
+                logger.debug(f"Vacancy already exists in DB, skipping: {vacancy_hash[:16]}...")
+                skipped_duplicates += 1
+                continue
 
             vacancy = Vacancy(
                 channel_id=vacancy_data.get('channel_id'),
@@ -174,8 +182,13 @@ async def run_vacancy_collection():
             vacancy_data['hash'] = vacancy_hash  # Для последующей отправки
             saved_vacancies.append(vacancy_data)
 
-        session.commit()
-        logger.info(f"Saved {len(saved_vacancies)} vacancies to database")
+        try:
+            session.commit()
+            logger.info(f"Saved {len(saved_vacancies)} new vacancies to database (skipped {skipped_duplicates} duplicates)")
+        except Exception as e:
+            logger.warning(f"Error saving to DB (probably duplicates), rolling back: {e}")
+            session.rollback()
+            # Все равно продолжаем с найденными вакансиями
 
         # 8. Отправка уведомлений
         logger.info("Step 8: Sending notifications...")
